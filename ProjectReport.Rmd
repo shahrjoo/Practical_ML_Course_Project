@@ -1,0 +1,164 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Ali"
+date: "May 25, 2017"
+output: 
+ html_document:
+  number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache=TRUE)
+```
+
+#Loading Data
+
+##Loading Packages
+```{r libs}
+library(ggplot2)
+library(lattice)
+library(caret)
+library(rattle)
+```
+
+##Loading data files
+```{r loaddata}
+training = read.csv("./data/pml-training.csv", na.strings = c("NA","#DIV/0!",""))
+testing = read.csv("./data/pml-testing.csv", na.strings = c("NA","#DIV/0!",""))
+dim(training)
+dim(testing)
+```
+Data contains missing values which are shown in the dataset by "NA","#DIV/0!" or "".  Training data set contains `r dim(training)[1]` samples, and testing dataset has `r dim(testing)[1]` samples. They have `r dim(training)[2]` features. We need to check these features to wheter all of them are usefull or not.
+
+
+
+
+#Cleaning data 
+
+## Check distribution of classes
+"classe" is the class of the data. Dataset contains 5 different classes and they have the following distribution in the data.
+```{r classe}
+summary(training$classe)
+```
+
+
+## Check the feature names in testing and training
+```{r featureNames}
+names(training)[!names(training) %in% names(testing)]
+names(testing)[!names(testing) %in% names(training)]
+```
+
+training set contains feature `r names(training)[!names(training) %in% names(testing)]` which is classe which is not in trainingset. also testing set contain feature `r names(testing)[!names(testing) %in% names(training)]` which is not in testingset.
+
+## Remove features that are not usefull in prediction
+Some of the features like row index, userName and timestamps are not usefull for predectoin.
+```{r removefirst5}
+training <- training[,-(1:5)]
+testing <-testing[,-(1:5)]
+dim(training)
+dim(testing)
+```
+
+
+## Remove useless features
+We need to check the features that are not usefull.
+"nearZeroVar diagnoses predictors that have one unique value (i.e. are zero variance predictors) or predictors that are have both of the following characteristics: they have very few unique values relative to the number of samples and the ratio of the frequency of the most common value to the frequency of the second most common value is large."
+
+```{r removezv}
+nzv <- nearZeroVar(training, saveMetrics = T)
+removed.cols <- names(training)[nzv$nzv]
+training <- training[,!(nzv$nzv)]
+testing <-testing[,!(nzv$nzv)]
+dim(training)
+dim(testing)
+```
+
+## Remove features with 95% missing values
+Features that has too many missing values in the dataset, are not usefull for prediction. Even if we do imputation for them, the data is not valid. Here < i removed the features that has more than 95% missing values in the samples.
+```{r removetms}
+NA_Variables <- sapply(training, function(x) mean(is.na(x))) > 0.95
+training <- training[, !NA_Variables]
+testing <- testing[, !NA_Variables]
+dim(training)
+dim(testing)
+```
+
+
+## Create training set and validation set
+Split the training data into training set and validation set. I used 70% cut off here.
+
+```{r splitdata}
+idxTraining <- createDataPartition(training$classe, p=0.7, list=FALSE)
+trainingSet <- training[idxTraining, ]
+validationSet <- training[-idxTraining, ]
+dim(trainingSet)
+dim(validationSet)
+```
+
+# Models
+## Random Forest
+Here I used random forest, cross validation with 4 fold change.
+```{r randomforest}
+set.seed(1234)
+modRF <- train(classe ~ ., method="rf",trControl=trainControl(method = "cv", number = 4), data=trainingSet)
+print(modRF)
+```
+### cheking in sample error
+```{r insample}
+predTrain=predict(modRF,trainingSet)
+confusionMatrix(trainingSet$classe,predTrain)
+```
+The accuracy of the model on the training set is 100% and the in sample error is 0%.
+
+### cheking out of sample error
+```{r outsample}
+PredValid=predict(modRF,validationSet)
+confusionMatrix(validationSet$classe,PredValid)
+```
+The accuracy of random forest model on the training set is 99.81% and the in sample error is 0.19%.
+
+###predicting testing dataset
+```{r rftestpred}
+predict(modRF, newdata=testing)
+```
+
+## gbm
+```{r gbmModel, results="hide"}
+modGbm <- train(classe ~ ., method="gbm",trControl=trainControl(method = "cv", number = 4), data=trainingSet)
+```
+
+The accuracy of the model on the training set is 99.19% and the in sample error is 0.81%.
+
+```{r gbmModel1}
+print(modGbm)
+#in sample error
+predTrain=predict(modGbm,trainingSet)
+confusionMatrix(trainingSet$classe,predTrain)
+#out sample of error
+PredValid=predict(modGbm,validationSet)
+confusionMatrix(validationSet$classe,PredValid)
+predict(modGbm, newdata=testing)
+```
+
+## lda 
+```{r ldaModel}
+modLda <- train(classe ~ ., method="lda",trControl=trainControl(method = "cv", number = 10), data=trainingSet)
+```
+The accuracy of the model on the training set is 71.64% and the in sample error is 28.36%.
+
+```{r ldaModel2}
+print(modLda)
+#in sample error
+predTrain=predict(modLda,trainingSet)
+confusionMatrix(trainingSet$classe,predTrain)
+#out sample of error
+PredValid=predict(modLda,validationSet)
+confusionMatrix(validationSet$classe,PredValid)
+predict(modLda, newdata=testing)
+```
+# Model Selection
+Based on the results random forest obtaines the best accuracy among our 3 different classifiers.
+```{r rftestpred2}
+predict(modRF, newdata=testing)
+```
